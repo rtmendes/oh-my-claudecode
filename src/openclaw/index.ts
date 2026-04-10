@@ -31,6 +31,7 @@ import type { OpenClawHookEvent, OpenClawContext, OpenClawPayload, OpenClawResul
 import { getOpenClawConfig, resolveGateway } from "./config.js";
 import { wakeGateway, wakeCommandGateway, interpolateInstruction, isCommandGateway } from "./dispatcher.js";
 import { buildOpenClawSignal } from "./signal.js";
+import { shouldCollapseOpenClawBurst } from "./dedupe.js";
 import { basename } from "path";
 import { getCurrentTmuxSession } from "../notifications/tmux.js";
 
@@ -88,20 +89,6 @@ export async function wakeOpenClaw(
     // Auto-detect tmux session if not provided in context
     const tmuxSession = context.tmuxSession ?? getCurrentTmuxSession() ?? undefined;
 
-    // Auto-capture tmux pane content for stop/session-end events (best-effort)
-    let tmuxTail = context.tmuxTail;
-    if (!tmuxTail && (event === "stop" || event === "session-end") && process.env.TMUX) {
-      try {
-        const { capturePaneContent } = await import("../features/rate-limit-wait/tmux-detector.js");
-        const paneId = process.env.TMUX_PANE;
-        if (paneId) {
-          tmuxTail = capturePaneContent(paneId, 15) ?? undefined;
-        }
-      } catch {
-        // Non-blocking: tmux capture is best-effort
-      }
-    }
-
     // Read reply channel context from environment variables
     const replyChannel = context.replyChannel ?? process.env.OPENCLAW_REPLY_CHANNEL ?? undefined;
     const replyTarget = context.replyTarget ?? process.env.OPENCLAW_REPLY_TARGET ?? undefined;
@@ -116,6 +103,27 @@ export async function wakeOpenClaw(
     };
 
     const signal = buildOpenClawSignal(event, enrichedContext);
+
+    if (shouldCollapseOpenClawBurst(event, signal, enrichedContext, tmuxSession)) {
+      if (DEBUG) {
+        console.error(`[openclaw] deduped ${event} (${signal.routeKey}) for tmux session ${tmuxSession}`);
+      }
+      return { gateway: gatewayName, success: true, skipped: "deduped" };
+    }
+
+    // Auto-capture tmux pane content for stop/session-end events (best-effort)
+    let tmuxTail = context.tmuxTail;
+    if (!tmuxTail && (event === "stop" || event === "session-end") && process.env.TMUX) {
+      try {
+        const { capturePaneContent } = await import("../features/rate-limit-wait/tmux-detector.js");
+        const paneId = process.env.TMUX_PANE;
+        if (paneId) {
+          tmuxTail = capturePaneContent(paneId, 15) ?? undefined;
+        }
+      } catch {
+        // Non-blocking: tmux capture is best-effort
+      }
+    }
 
     // Build template variables from whitelisted context fields
     const variables: Record<string, string | undefined> = {
