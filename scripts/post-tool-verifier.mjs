@@ -170,6 +170,25 @@ function stripClaudeTempCwdErrors(output) {
 // Pattern matching Claude Code's "Error: Exit code N" prefix line
 // Note: no /g flag — module-level regex with /g is stateful (.lastIndex persists across calls)
 const CLAUDE_EXIT_CODE_PREFIX = /^Error: Exit code \d+\s*$/m;
+const NON_ACTIONABLE_ERROR_LINES = [
+  /^\s*["']?severity["']?\s*[:=]\s*["']error["']?\s*[,}]?\s*$/i,
+  /^\s*["']?totalErrors["']?\s*[:=]\s*0\b.*$/i,
+  /^\s*totalErrors\s*[:=]\s*0\b.*$/i,
+  /^\s*["']?error["']?\s*:\s*["'][^"']*["']\s*[,}]?\s*$/i,
+  /^\s*return\s*\{[^\n]*\berror\s*:\s*["'][^"']*["'][^\n]*\}\s*;?$/i,
+];
+
+function stripNonActionableErrorContext(output) {
+  if (!output) return '';
+  return output
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      return !NON_ACTIONABLE_ERROR_LINES.some((pattern) => pattern.test(trimmed));
+    })
+    .join('\n');
+}
 
 /**
  * Detect non-zero exit code with valid stdout (issue #960).
@@ -179,7 +198,7 @@ const CLAUDE_EXIT_CODE_PREFIX = /^Error: Exit code \d+\s*$/m;
  */
 export function isNonZeroExitWithOutput(output) {
   if (!output) return false;
-  const cleaned = stripClaudeTempCwdErrors(output);
+  const cleaned = stripNonActionableErrorContext(stripClaudeTempCwdErrors(output));
 
   // Must contain Claude Code's exit code prefix
   if (!CLAUDE_EXIT_CODE_PREFIX.test(cleaned)) return false;
