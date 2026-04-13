@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   isSafeCommand,
+  isSafeRepoInspectionCommand,
+  isSafeTargetedLocalTestCommand,
   isHeredocWithSafeBase,
   isActiveModeRunning,
   processPermissionRequest,
@@ -19,20 +21,13 @@ describe('permission-handler', () => {
         'git branch',
         'git show',
         'git fetch',
-        'npm test',
-        'npm run test',
         'npm run lint',
         'npm run build',
-        'pnpm test',
-        'yarn test',
         'tsc',
         'tsc --noEmit',
         'eslint .',
         'prettier .',
-        'cargo test',
         'cargo check',
-        'pytest',
-        'python -m pytest',
         'ls',
         'ls -la',
         // Quoted paths are allowed (needed for paths with spaces)
@@ -126,6 +121,8 @@ describe('permission-handler', () => {
         // Comment injection
         { cmd: 'git status #ignore rest', desc: 'comment injection' },
         { cmd: 'npm test # malicious', desc: 'comment to hide code' },
+        { cmd: 'npm test -- --run src/example.test.ts', desc: 'broad npm test invocation' },
+        { cmd: 'pytest tests/example_test.py', desc: 'broad pytest invocation' },
       ];
 
       additionalDangerousCases.forEach(({ cmd, desc }) => {
@@ -171,6 +168,65 @@ describe('permission-handler', () => {
     it('should handle whitespace correctly', () => {
       expect(isSafeCommand('  git status  ')).toBe(true);
       expect(isSafeCommand('  git status; rm -rf /  ')).toBe(false);
+    });
+  });
+
+  describe('repo-scoped inspection commands', () => {
+    const testDir = '/tmp/omc-permission-safe-inspection';
+
+    beforeEach(() => {
+      fs.rmSync(testDir, { recursive: true, force: true });
+      fs.mkdirSync(path.join(testDir, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(testDir, 'src', 'sample.ts'), 'export const value = 1;\n');
+      fs.mkdirSync(path.join(testDir, '.git'), { recursive: true });
+      fs.writeFileSync(path.join(testDir, '.env.local'), 'SECRET=1\n');
+    });
+
+    afterEach(() => {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it('allows narrow repo inspection commands', () => {
+      expect(isSafeRepoInspectionCommand('cat src/sample.ts', testDir)).toBe(true);
+      expect(isSafeRepoInspectionCommand('sed -n 1,20p src/sample.ts', testDir)).toBe(true);
+      expect(isSafeRepoInspectionCommand('rg -n value src', testDir)).toBe(true);
+      expect(isSafeRepoInspectionCommand('head -n 5 src/sample.ts', testDir)).toBe(true);
+    });
+
+    it('rejects sensitive or escaping repo inspection paths', () => {
+      expect(isSafeRepoInspectionCommand('cat .env.local', testDir)).toBe(false);
+      expect(isSafeRepoInspectionCommand('cat ../outside.txt', testDir)).toBe(false);
+      expect(isSafeRepoInspectionCommand('rg -n value .git', testDir)).toBe(false);
+      expect(isSafeRepoInspectionCommand('sed -n 1,20p missing.ts', testDir)).toBe(false);
+    });
+  });
+
+  describe('targeted local test commands', () => {
+    const testDir = '/tmp/omc-permission-safe-tests';
+
+    beforeEach(() => {
+      fs.rmSync(testDir, { recursive: true, force: true });
+      fs.mkdirSync(path.join(testDir, 'src', '__tests__'), { recursive: true });
+      fs.writeFileSync(path.join(testDir, 'src', '__tests__', 'sample.test.ts'), 'test("x", () => {});\n');
+      fs.mkdirSync(path.join(testDir, '.git'), { recursive: true });
+    });
+
+    afterEach(() => {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it('allows narrow single-test commands', () => {
+      expect(isSafeTargetedLocalTestCommand('vitest run src/__tests__/sample.test.ts', testDir)).toBe(true);
+      expect(isSafeTargetedLocalTestCommand('npm test -- --run src/__tests__/sample.test.ts', testDir)).toBe(true);
+      expect(isSafeTargetedLocalTestCommand('pnpm vitest run src/__tests__/sample.test.ts', testDir)).toBe(true);
+      expect(isSafeTargetedLocalTestCommand('node --test src/__tests__/sample.test.ts', testDir)).toBe(true);
+    });
+
+    it('rejects broad or malformed test commands', () => {
+      expect(isSafeTargetedLocalTestCommand('npm test', testDir)).toBe(false);
+      expect(isSafeTargetedLocalTestCommand('vitest run', testDir)).toBe(false);
+      expect(isSafeTargetedLocalTestCommand('vitest run src/__tests__/sample.test.ts --watch', testDir)).toBe(false);
+      expect(isSafeTargetedLocalTestCommand('vitest run ../other.test.ts', testDir)).toBe(false);
     });
   });
 
@@ -397,8 +453,32 @@ describe('permission-handler', () => {
         expect(result.hookSpecificOutput?.decision?.reason).toContain('Safe');
       });
 
+      it('should auto-approve safe repo inspection commands', () => {
+        fs.mkdirSync(path.join(testDir, 'src'), { recursive: true });
+        fs.writeFileSync(path.join(testDir, 'src', 'safe.ts'), 'export const value = 1;\n');
+
+        const result = processPermissionRequest(createInput('cat src/safe.ts'));
+        expect(result.continue).toBe(true);
+        expect(result.hookSpecificOutput?.decision?.behavior).toBe('allow');
+      });
+
+      it('should auto-approve narrowly targeted local test commands', () => {
+        fs.mkdirSync(path.join(testDir, 'src', '__tests__'), { recursive: true });
+        fs.writeFileSync(path.join(testDir, 'src', '__tests__', 'safe.test.ts'), 'test("x", () => {});\n');
+
+        const result = processPermissionRequest(createInput('vitest run src/__tests__/safe.test.ts'));
+        expect(result.continue).toBe(true);
+        expect(result.hookSpecificOutput?.decision?.behavior).toBe('allow');
+      });
+
       it('should reject unsafe commands even when pattern matches prefix', () => {
         const result = processPermissionRequest(createInput('git status; rm -rf /'));
+        expect(result.continue).toBe(true);
+        expect(result.hookSpecificOutput?.decision?.behavior).not.toBe('allow');
+      });
+
+      it('should not auto-approve broad local test commands', () => {
+        const result = processPermissionRequest(createInput('npm test'));
         expect(result.continue).toBe(true);
         expect(result.hookSpecificOutput?.decision?.behavior).not.toBe('allow');
       });
