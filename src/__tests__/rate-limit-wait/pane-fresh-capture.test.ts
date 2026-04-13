@@ -230,7 +230,7 @@ describe('pane-fresh-capture', () => {
 
       expect(result).toBe(137);
       expect(tmuxExec).toHaveBeenCalledWith(
-        ['display-message', '-t', '%3', '-p', '#{history_size}'],
+        ['display-message', '-t', '%3', '-p', '#{pane_dead} #{history_size}'],
         expect.objectContaining({ timeout: 3000 }),
       );
     });
@@ -241,6 +241,18 @@ describe('pane-fresh-capture', () => {
       });
 
       expect(getPaneHistorySize('%3')).toBeNull();
+    });
+
+    it('returns null when tmux reports the pane as dead', () => {
+      vi.mocked(tmuxExec).mockReturnValue('1 137\n');
+
+      expect(getPaneHistorySize('%3')).toBeNull();
+    });
+
+    it('parses history size when tmux reports a live pane', () => {
+      vi.mocked(tmuxExec).mockReturnValue('0 137\n');
+
+      expect(getPaneHistorySize('%3')).toBe(137);
     });
 
     it('returns null for non-numeric output', () => {
