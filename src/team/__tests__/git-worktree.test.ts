@@ -37,7 +37,9 @@ describe('git-worktree', () => {
     it('creates worktree at correct path', () => {
       const info = createWorkerWorktree(teamName, 'worker1', repoDir);
 
-      expect(info.path).toContain('.omc/worktrees');
+      expect(info.path).toContain('.omc/team/test-wt/worktrees');
+      expect(info.created).toBe(true);
+      expect(info.reused).toBe(false);
       expect(info.branch).toBe(`omc-team/${teamName}/worker1`);
       expect(info.workerName).toBe('worker1');
       expect(info.teamName).toBe(teamName);
@@ -58,10 +60,12 @@ describe('git-worktree', () => {
       const info2 = createWorkerWorktree(teamName, 'worker1', repoDir);
       expect(existsSync(info2.path)).toBe(true);
       expect(info2.path).toBe(info1.path);
+      expect(info2.created).toBe(false);
+      expect(info2.reused).toBe(true);
     });
 
     it('cleans up a stale plain directory before creating the worktree', () => {
-      const stalePath = join(repoDir, '.omc', 'worktrees', teamName, 'worker-stale');
+      const stalePath = join(repoDir, '.omc', 'team', teamName, 'worktrees', 'worker-stale');
       // Create a directory that is not registered as a git worktree.
       rmSync(stalePath, { recursive: true, force: true });
       mkdirSync(stalePath, { recursive: true });
@@ -76,6 +80,14 @@ describe('git-worktree', () => {
   });
 
   describe('removeWorkerWorktree', () => {
+    it('preserves dirty worktrees instead of force-removing them', () => {
+      const info = createWorkerWorktree(teamName, 'dirty-worker', repoDir);
+      writeFileSync(join(info.path, 'dirty.txt'), 'dirty');
+
+      expect(() => removeWorkerWorktree(teamName, 'dirty-worker', repoDir)).toThrow(/worktree_dirty/);
+      expect(existsSync(info.path)).toBe(true);
+    });
+
     it('removes worktree and branch', () => {
       const info = createWorkerWorktree(teamName, 'worker1', repoDir);
       expect(existsSync(info.path)).toBe(true);
@@ -119,9 +131,22 @@ describe('git-worktree', () => {
 
       expect(listTeamWorktrees(teamName, repoDir)).toHaveLength(2);
 
-      cleanupTeamWorktrees(teamName, repoDir);
+      const result = cleanupTeamWorktrees(teamName, repoDir);
 
+      expect(result.preserved).toHaveLength(0);
       expect(listTeamWorktrees(teamName, repoDir)).toHaveLength(0);
+    });
+
+    it('preserves dirty worktrees during cleanup and leaves metadata for follow-up', () => {
+      const dirty = createWorkerWorktree(teamName, 'worker-dirty', repoDir);
+      writeFileSync(join(dirty.path, 'dirty.txt'), 'dirty');
+
+      const result = cleanupTeamWorktrees(teamName, repoDir);
+
+      expect(result.removed).toHaveLength(0);
+      expect(result.preserved).toHaveLength(1);
+      expect(existsSync(dirty.path)).toBe(true);
+      expect(listTeamWorktrees(teamName, repoDir)).toHaveLength(1);
     });
   });
 });

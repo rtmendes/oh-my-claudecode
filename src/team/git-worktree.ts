@@ -170,51 +170,16 @@ function writeMetadata(repoRoot: string, teamName: string, entries: WorktreeInfo
   atomicWriteJson(metaPath, entries);
 }
 
-function recordMetadata(repoRoot: string, teamName: string, info: WorktreeInfo): void {
-  const metaLockPath = getMetadataPath(repoRoot, teamName) + '.lock';
-  withFileLockSync(metaLockPath, () => {
-    const existing = readMetadata(repoRoot, teamName);
-    const updated = existing.filter(e => e.workerName !== info.workerName);
-    updated.push(info);
-    writeMetadata(repoRoot, teamName, updated);
-  });
-}
-
-function forgetMetadata(repoRoot: string, teamName: string, workerName: string): void {
-  const metaLockPath = getMetadataPath(repoRoot, teamName) + '.lock';
-  withFileLockSync(metaLockPath, () => {
-    const existing = readMetadata(repoRoot, teamName);
-    const updated = existing.filter(e => e.workerName !== workerName);
-    writeMetadata(repoRoot, teamName, updated);
-  });
-}
-
-function assertCompatibleExistingWorktree(
-  repoRoot: string,
-  wtPath: string,
-  branch: string,
-  mode: Exclude<TeamWorktreeMode, 'disabled'>,
-): void {
-  if (!isRegisteredWorktreePath(repoRoot, wtPath)) {
-    const error = new Error(`worktree_path_mismatch: existing path is not a registered git worktree: ${wtPath}`);
-    (error as Error & { code?: string }).code = 'worktree_path_mismatch';
-    throw error;
-  }
-  if (isWorktreeDirty(wtPath)) {
-    const error = new Error(`worktree_dirty: preserving dirty worker worktree at ${wtPath}`);
-    (error as Error & { code?: string }).code = 'worktree_dirty';
-    throw error;
-  }
-  const detached = isDetached(wtPath);
-  if (mode === 'detached' && !detached) {
-    const error = new Error(`worktree_mode_mismatch: expected detached worktree at ${wtPath}`);
-    (error as Error & { code?: string }).code = 'worktree_mode_mismatch';
-    throw error;
-  }
-  if (mode === 'branch' && currentBranch(wtPath) !== branch) {
-    const error = new Error(`worktree_branch_mismatch: expected ${branch} at ${wtPath}`);
-    (error as Error & { code?: string }).code = 'worktree_branch_mismatch';
-    throw error;
+function assertLeaderRepoClean(repoRoot: string): void {
+  const status = gitOutput(repoRoot, ['status', '--porcelain'])
+    .split('\n')
+    .filter(line => line.trim() !== '' && !/^\?\? \.omc(?:\/|$)/.test(line))
+    .join('\n')
+    .trim();
+  if (status !== '') {
+    const err = new Error('leader_worktree_dirty: refusing to provision team worktrees from a dirty leader repository');
+    err.name = 'leader_worktree_dirty';
+    throw err;
   }
 }
 
