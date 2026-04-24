@@ -121,9 +121,8 @@ function isDetached(wtPath: string): boolean {
   return currentBranch(wtPath) === 'HEAD';
 }
 
-/** Get worktree metadata path */
-function getMetadataPath(repoRoot: string, teamName: string): string {
-  return join(repoRoot, '.omc', 'state', 'team-bridge', sanitizeName(teamName), 'worktrees.json');
+function isRegisteredWorktreePath(repoRoot: string, wtPath: string): boolean {
+  return getRegisteredWorktreeBranch(repoRoot, wtPath) !== undefined;
 }
 
 function isWorktreeDirty(wtPath: string): boolean {
@@ -215,6 +214,7 @@ export function ensureWorkerWorktree(
   const wtPath = getWorktreePath(repoRoot, teamName, workerName);
   const branch = mode === 'branch' ? getBranchName(teamName, workerName) : 'HEAD';
   validateResolvedPath(wtPath, repoRoot);
+  assertLeaderRepoClean(repoRoot);
 
   try {
     execFileSync('git', ['worktree', 'prune'], { cwd: repoRoot, stdio: 'pipe' });

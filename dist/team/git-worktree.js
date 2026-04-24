@@ -82,7 +82,18 @@ function currentBranch(wtPath) {
 function isDetached(wtPath) {
     return currentBranch(wtPath) === 'HEAD';
 }
-/** Get worktree metadata path */
+function isRegisteredWorktreePath(repoRoot, wtPath) {
+    return getRegisteredWorktreeBranch(repoRoot, wtPath) !== undefined;
+}
+function isWorktreeDirty(wtPath) {
+    try {
+        return gitOutput(wtPath, ['status', '--porcelain'], wtPath).trim() !== '';
+    }
+    catch {
+        return existsSync(wtPath);
+    }
+}
+/** Get worktree metadata path. */
 function getMetadataPath(repoRoot, teamName) {
     return join(repoRoot, '.omc', 'state', 'team', sanitizeName(teamName), 'worktrees.json');
 }
