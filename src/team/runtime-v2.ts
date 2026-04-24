@@ -936,8 +936,7 @@ export async function startTeamV2(config: StartTeamV2Config): Promise<TeamRuntim
     resize_hook_name: null,
     resize_hook_target: null,
     resolved_routing: resolvedRouting,
-    workspace_mode: workspaceMode,
-    worktree_mode: worktreeMode,
+    ...(ownsWindow ? { workspace_mode: 'single' as const, worktree_mode: 'disabled' as const } : {}),
   };
   await saveTeamConfig(teamConfig, leaderCwd);
   const permissionsSnapshot = {

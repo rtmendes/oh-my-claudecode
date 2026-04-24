@@ -27316,6 +27316,7 @@ function configFromManifest(manifest) {
     leader_cwd: manifest.leader_cwd,
     team_state_root: manifest.team_state_root,
     workspace_mode: manifest.workspace_mode,
+    worktree_mode: manifest.worktree_mode,
     leader_pane_id: manifest.leader_pane_id,
     hud_pane_id: manifest.hud_pane_id,
     resize_hook_name: manifest.resize_hook_name,
@@ -27825,6 +27826,7 @@ function configFromManifest2(manifest) {
     leader_cwd: manifest.leader_cwd,
     team_state_root: manifest.team_state_root,
     workspace_mode: manifest.workspace_mode,
+    worktree_mode: manifest.worktree_mode,
     leader_pane_id: manifest.leader_pane_id,
     hud_pane_id: manifest.hud_pane_id,
     resize_hook_name: manifest.resize_hook_name,
@@ -27943,6 +27945,7 @@ async function saveTeamConfig(config2, cwd2) {
       leader_cwd: config2.leader_cwd,
       team_state_root: config2.team_state_root,
       workspace_mode: config2.workspace_mode,
+      worktree_mode: config2.worktree_mode,
       leader_pane_id: config2.leader_pane_id,
       hud_pane_id: config2.hud_pane_id,
       resize_hook_name: config2.resize_hook_name,
@@ -30962,7 +30965,7 @@ async function startTeamV2(config2) {
     resize_hook_name: null,
     resize_hook_target: null,
     resolved_routing: resolvedRouting,
-    ...ownsWindow ? { workspace_mode: "single" } : {}
+    ...ownsWindow ? { workspace_mode: "single", worktree_mode: "disabled" } : {}
   };
   await saveTeamConfig(teamConfig, leaderCwd);
   const permissionsSnapshot = {
@@ -30990,6 +30993,7 @@ async function startTeamV2(config2) {
     leader_cwd: leaderCwd,
     team_state_root: teamConfig.team_state_root,
     workspace_mode: teamConfig.workspace_mode,
+    worktree_mode: teamConfig.worktree_mode,
     leader_pane_id: leaderPaneId,
     hud_pane_id: null,
     resize_hook_name: null,
