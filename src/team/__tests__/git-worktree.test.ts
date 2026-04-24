@@ -24,6 +24,7 @@ describe('git-worktree', () => {
     execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: repoDir, stdio: 'pipe' });
     execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir, stdio: 'pipe' });
     writeFileSync(join(repoDir, 'README.md'), '# Test\n');
+    writeFileSync(join(repoDir, 'AGENTS.md'), 'original instructions');
     execFileSync('git', ['add', '.'], { cwd: repoDir, stdio: 'pipe' });
     execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: repoDir, stdio: 'pipe' });
   });
@@ -183,7 +184,6 @@ describe('git-worktree', () => {
     it('restores a pre-existing worktree-root AGENTS.md before removing a clean worktree', () => {
       const info = createWorkerWorktree(teamName, 'worker-agents', repoDir);
       const agentsPath = join(info.path, 'AGENTS.md');
-      writeFileSync(agentsPath, 'original instructions');
 
       installWorktreeRootAgents(teamName, 'worker-agents', repoDir, info.path, 'managed worker overlay');
       expect(readFileSync(agentsPath, 'utf-8')).toBe('managed worker overlay');
